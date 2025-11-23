@@ -1,0 +1,50 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String   // plaintext for hackathon is fine
+  role      String   // e.g. "Pilot" | "CoPilot" | "InnovationLead"
+  createdAt DateTime @default(now())
+}
+
+model Robot {
+  id        Int      @id @default(autoincrement())
+  name      String
+  baseUrl   String   // e.g. http://raspberrypi.local:5000
+  createdAt DateTime @default(now())
+  missions  Mission[]
+}
+
+model Mission {
+  id         Int      @id @default(autoincrement())
+  name       String
+  status     String   // "Pending", "InProgress", "Completed", "Failed"
+  targetZone String?  // e.g. "Ward A1"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  robotId Int
+  robot   Robot @relation(fields: [robotId], references: [id])
+
+  events  Event[]
+}
+
+model Event {
+  id        Int      @id @default(autoincrement())
+  type      String   // e.g. "ZoneDetected", "ModeChanged", "Obstacle"
+  message   String
+  zone      String?
+  createdAt DateTime @default(now())
+
+  missionId Int?
+  mission   Mission? @relation(fields: [missionId], references: [id])
+}
