@@ -1,7 +1,18 @@
 // middleware.ts
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/_next", "/favicon.ico"];
+const PUBLIC_PATHS = [
+  "/login", 
+  "/enroll",
+  "/api/auth/login", 
+  "/api/auth/logout",
+  "/api/face/enroll",
+  "/api/face/recognize",
+  "/api/users",
+  "/_next", 
+  "/favicon.ico",
+  "/models",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
