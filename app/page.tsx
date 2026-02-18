@@ -20,6 +20,18 @@ type IRSensorData = {
   pins: number[];
 };
 
+type VoltageData = {
+  core_voltage_v: number | null;
+  cpu_temp_c: number | null;
+  throttled: string | null;
+};
+
+type PanoramicFrame = {
+  index: number;
+  angle_deg: number;
+  jpeg_b64: string;
+};
+
 type AIMessage = {
   role: "user" | "assistant";
   content: string;
@@ -31,8 +43,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<RobotStatus>({});
   const [irSensors, setIrSensors] = useState<IRSensorData | null>(null);
+  const [voltage, setVoltage] = useState<VoltageData | null>(null);
   const [online, setOnline] = useState(false);
   const [simulationMode, setSimulationMode] = useState(false);
+  const [panoramicFrames, setPanoramicFrames] = useState<PanoramicFrame[]>([]);
+  const [panoramicLoading, setPanoramicLoading] = useState(false);
   
   // AI Prompt state
   const [aiPrompt, setAiPrompt] = useState("");
@@ -80,6 +95,21 @@ export default function Dashboard() {
       await apiPost("/api/buzzer", { times, duration });
     } catch (err) {
       console.error("Buzzer error:", err);
+    }
+  }
+
+  async function capturePanoramic() {
+    setPanoramicLoading(true);
+    setPanoramicFrames([]);
+    try {
+      const data = await apiPost("/api/camera/panoramic", {});
+      if (data.ok && data.data?.frames) {
+        setPanoramicFrames(data.data.frames);
+      }
+    } catch (err) {
+      console.error("Panoramic capture error:", err);
+    } finally {
+      setPanoramicLoading(false);
     }
   }
 
@@ -133,15 +163,17 @@ export default function Dashboard() {
 
     async function poll() {
       try {
-        const [statusRes, irRes, healthRes] = await Promise.all([
+        const [statusRes, irRes, healthRes, voltageRes] = await Promise.all([
           fetch("/api/status", { cache: "no-store" }),
           fetch("/api/sensors/ir", { cache: "no-store" }),
           fetch("/api/health", { cache: "no-store" }),
+          fetch("/api/voltage", { cache: "no-store" }),
         ]);
-        const [statusData, irData, healthData] = await Promise.all([
+        const [statusData, irData, healthData, voltageData] = await Promise.all([
           statusRes.json(),
           irRes.json(),
           healthRes.json(),
+          voltageRes.json(),
         ]);
 
         if (!cancelled) {
@@ -158,6 +190,10 @@ export default function Dashboard() {
 
           if (healthData.ok) {
             setSimulationMode(healthData.simulation_mode ?? false);
+          }
+
+          if (voltageData.ok) {
+            setVoltage(voltageData.data);
           }
 
           // Sync mode from robot
@@ -225,6 +261,13 @@ export default function Dashboard() {
           className="w-full h-80 object-contain"
         />
         <div className="absolute bottom-3 right-3 flex gap-2">
+          <button
+            onClick={capturePanoramic}
+            disabled={!online || panoramicLoading}
+            className="px-3 py-1.5 rounded-lg bg-slate-800/80 backdrop-blur-sm text-xs text-slate-200 hover:bg-slate-700/80 border border-slate-600 transition-colors disabled:opacity-50"
+          >
+            {panoramicLoading ? "Capturing..." : "360° Panoramic"}
+          </button>
           <a
             href={`${ROBOT_BASE_URL}/api/robot/camera/snapshot`}
             target="_blank"
@@ -236,8 +279,37 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Mode + Status */}
-      <section className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Panoramic Frames */}
+      {panoramicFrames.length > 0 && (
+        <section className="w-full max-w-5xl">
+          <div className="bg-slate-900 rounded-2xl p-4 shadow">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold">360° Panoramic Capture ({panoramicFrames.length} frames)</h2>
+              <button
+                onClick={() => setPanoramicFrames([])}
+                className="text-xs px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {panoramicFrames.map((frame) => (
+                <div key={frame.index} className="flex-shrink-0">
+                  <img
+                    src={`data:image/jpeg;base64,${frame.jpeg_b64}`}
+                    alt={`Panoramic ${frame.angle_deg}°`}
+                    className="h-32 rounded-lg border border-slate-700"
+                  />
+                  <p className="text-[10px] text-slate-500 text-center mt-1">{frame.angle_deg}°</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Mode + Status + Diagnostics */}
+      <section className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Mode */}
         <div className="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 className="font-semibold mb-2">Mode</h2>
@@ -272,6 +344,28 @@ export default function Dashboard() {
           <p>Uptime: {status.uptime ? `${Math.round(status.uptime)}s` : "-"}</p>
           {simulationMode && (
             <p className="text-amber-400 mt-1">Simulation Mode</p>
+          )}
+        </div>
+
+        {/* Pi Diagnostics */}
+        <div className="bg-slate-900 rounded-2xl p-4 shadow text-sm">
+          <h2 className="font-semibold mb-2">Pi Diagnostics</h2>
+          {voltage ? (
+            <>
+              <p>Core Voltage: {voltage.core_voltage_v != null ? `${voltage.core_voltage_v}V` : "-"}</p>
+              <p>CPU Temp: {voltage.cpu_temp_c != null ? `${voltage.cpu_temp_c}°C` : "-"}</p>
+              <p className="flex items-center gap-1">
+                Throttled:{" "}
+                <span className={voltage.throttled === "0x0" ? "text-emerald-400" : "text-red-400"}>
+                  {voltage.throttled ?? "-"}
+                </span>
+              </p>
+              {voltage.throttled && voltage.throttled !== "0x0" && (
+                <p className="text-red-400 text-xs mt-1">Warning: Power/thermal throttling detected</p>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-400">No diagnostics data</p>
           )}
         </div>
       </section>
