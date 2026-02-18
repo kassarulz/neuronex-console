@@ -28,7 +28,6 @@ type AIMessage = {
 
 export default function Dashboard() {
   const [mode, setMode] = useState<"manual" | "autonomous">("manual");
-  const [speed, setSpeed] = useState(50);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<RobotStatus>({});
   const [irSensors, setIrSensors] = useState<IRSensorData | null>(null);
@@ -58,7 +57,7 @@ export default function Dashboard() {
     if (mode !== "manual") return;
     setLoading(true);
     try {
-      await apiPost("/api/drive", { direction, speed });
+      await apiPost("/api/drive", { direction });
     } finally {
       setLoading(false);
     }
@@ -237,8 +236,8 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Mode + Speed + Status */}
-      <section className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Mode + Status */}
+      <section className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Mode */}
         <div className="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 className="font-semibold mb-2">Mode</h2>
@@ -262,20 +261,6 @@ export default function Dashboard() {
               Autonomous
             </button>
           </div>
-        </div>
-
-        {/* Speed */}
-        <div className="bg-slate-900 rounded-2xl p-4 shadow">
-          <h2 className="font-semibold mb-2">Speed</h2>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={speed}
-            onChange={(e) => setSpeed(parseInt(e.target.value))}
-            className="w-full"
-          />
-          <p className="mt-2 text-sm text-slate-300">{speed}%</p>
         </div>
 
         {/* Status */}

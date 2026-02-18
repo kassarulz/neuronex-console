@@ -9,7 +9,7 @@ type Direction = (typeof VALID_DIRECTIONS)[number];
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { direction, speed = 50, duration = 0 } = body;
+    const { direction } = body;
 
     if (!VALID_DIRECTIONS.includes(direction)) {
       return NextResponse.json(
@@ -19,14 +19,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Each direction maps to its own Robot Controller API endpoint
-    const payload = direction === "stop" ? {} : { speed, duration };
-    const result = await robotPost(`/api/robot/${direction}`, payload);
+    // Speed (default 50) and duration (default 0 = continuous) are handled by the Robot Controller API defaults
+    const result = await robotPost(`/api/robot/${direction}`, {});
 
     // Log this action
     await prisma.event.create({
       data: {
         type: "DriveCommand",
-        message: `Direction: ${direction}, Speed: ${speed}`,
+        message: `Direction: ${direction}`,
       },
     });
 
