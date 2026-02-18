@@ -1,12 +1,12 @@
-// app/api/status/route.ts
+// app/api/health/route.ts
 import { NextResponse } from "next/server";
 import { robotGet } from "@/lib/robot";
 
 export async function GET() {
   try {
-    const robotStatus = await robotGet("/api/robot/status");
-    // robotStatus is a RobotResponse: { success, action, message, data, timestamp }
-    return NextResponse.json({ ok: robotStatus.success, status: robotStatus.data });
+    const result = await robotGet("/health");
+    // result: { status: "ok", simulation_mode: boolean, timestamp: float }
+    return NextResponse.json({ ok: true, ...result });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json(

@@ -3,14 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { robotPost } from "@/lib/robot";
 import { prisma } from "@/lib/prisma";
 
+const VALID_DIRECTIONS = ["forward", "backward", "left", "right", "stop"] as const;
+type Direction = (typeof VALID_DIRECTIONS)[number];
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { direction, speed } = body;
+    const { direction, speed = 50, duration = 0 } = body;
 
-    const result = await robotPost("/drive", { direction, speed });
+    if (!VALID_DIRECTIONS.includes(direction)) {
+      return NextResponse.json(
+        { ok: false, error: `Invalid direction: ${direction}` },
+        { status: 400 }
+      );
+    }
 
-    // Optional: log this action
+    // Each direction maps to its own Robot Controller API endpoint
+    const payload = direction === "stop" ? {} : { speed, duration };
+    const result = await robotPost(`/api/robot/${direction}`, payload);
+
+    // Log this action
     await prisma.event.create({
       data: {
         type: "DriveCommand",
