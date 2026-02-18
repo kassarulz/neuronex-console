@@ -4,8 +4,9 @@ import { robotGet } from "@/lib/robot";
 
 export async function GET() {
   try {
-    const status = await robotGet("/status");
-    return NextResponse.json({ ok: true, status });
+    const robotStatus = await robotGet("/api/robot/status");
+    // robotStatus is a RobotResponse: { success, action, message, data, timestamp }
+    return NextResponse.json({ ok: robotStatus.success, status: robotStatus.data });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json(

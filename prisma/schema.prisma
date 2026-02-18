@@ -9,11 +9,13 @@ generator client {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  password  String   // plaintext for hackathon is fine
-  role      String   // e.g. "Pilot" | "CoPilot" | "InnovationLead"
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  username       String   @unique
+  password       String   // plaintext for hackathon is fine
+  role           String   // e.g. "Pilot" | "CoPilot" | "InnovationLead"
+  createdAt      DateTime @default(now())
+  faceDescriptor String?  // JSON string of face embedding (128-dimensional vector)
+  faceEnrolledAt DateTime? // When face was enrolled
 }
 
 model Robot {
