@@ -338,7 +338,7 @@ function LoginContent() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold text-lg group-hover:text-emerald-400 transition-colors">
-                        Face Recognition
+                        Biometric Login
                       </h3>
                       <p className="text-sm text-slate-400">
                         Quick & secure biometric login

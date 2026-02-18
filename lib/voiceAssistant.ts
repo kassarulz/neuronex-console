@@ -39,6 +39,11 @@ export const VOICE_COMMANDS: VoiceCommand[] = [
     action: "CAPTURE",
     response: "Capturing your face. Please hold still.",
   },
+  {
+    patterns: [/create\s*(user|account)?/i, /submit/i, /register\s*user/i],
+    action: "CREATE_USER",
+    response: "Creating user account.",
+  },
 ];
 
 // Voice feedback messages for different states

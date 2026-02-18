@@ -222,6 +222,7 @@ export function FuturisticButton({
   variant = "primary",
   size = "md",
   className = "",
+  type = "button",
 }: {
   children: React.ReactNode;
   onClick?: () => void;
@@ -229,6 +230,7 @@ export function FuturisticButton({
   variant?: "primary" | "secondary" | "danger" | "ghost";
   size?: "sm" | "md" | "lg";
   className?: string;
+  type?: "button" | "submit" | "reset";
 }) {
   const variantStyles = {
     primary: "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-lg shadow-emerald-500/25",
@@ -245,6 +247,7 @@ export function FuturisticButton({
 
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`

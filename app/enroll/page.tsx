@@ -24,12 +24,15 @@ type User = {
 };
 
 type EnrollmentStep = 
-  | "select-user"
+  | "registration-form"
+  | "registration-success"
   | "camera-setup"
   | "positioning"
   | "capturing"
-  | "success"
+  | "face-success"
   | "error";
+
+const ROLES = ["Pilot", "CoPilot", "InnovationLead", "Medic", "Admin"];
 
 export default function EnrollPage() {
   const router = useRouter();
@@ -47,8 +50,7 @@ export default function EnrollPage() {
     captureFaceDescriptor,
   } = useFaceRecognition();
 
-  const [step, setStep] = useState<EnrollmentStep>("select-user");
-  const [users, setUsers] = useState<User[]>([]);
+  const [step, setStep] = useState<EnrollmentStep>("registration-form");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,24 +58,74 @@ export default function EnrollPage() {
   const [voiceListening, setVoiceListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [captureProgress, setCaptureProgress] = useState(0);
+  
+  // Manual registration form state
+  const [formUsername, setFormUsername] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const [formRole, setFormRole] = useState(ROLES[0]);
+  const [enrollFaceAfter, setEnrollFaceAfter] = useState(true);
+  const [newlyCreatedUser, setNewlyCreatedUser] = useState<User | null>(null);
 
   const voiceAssistant = typeof window !== "undefined" ? getVoiceAssistant() : null;
 
-  // Load users on mount
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const res = await fetch("/api/users");
-        const data = await res.json();
-        if (data.ok) {
-          setUsers(data.users);
-        }
-      } catch (err) {
-        console.error("Failed to fetch users:", err);
-      }
+  // Core registration logic (used by both form submit and voice command)
+  const submitRegistration = useCallback(async () => {
+    if (!formUsername || !formPassword) {
+      setError("Username and password are required");
+      return;
     }
-    fetchUsers();
-  }, []);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: formUsername,
+          password: formPassword,
+          role: formRole,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        throw new Error(data.error || "Failed to create user");
+      }
+
+      setNewlyCreatedUser(data.user);
+
+      if (enrollFaceAfter) {
+        // Proceed to face enrollment for the new user
+        setSelectedUser(data.user);
+        setStep("camera-setup");
+        
+        if (voiceAssistant && voiceEnabled) {
+          await voiceAssistant.speak(`User ${data.user.username} created successfully. Now let's enroll their face.`);
+        }
+      } else {
+        setStep("registration-success");
+        
+        if (voiceAssistant && voiceEnabled) {
+          await voiceAssistant.speak(`User ${data.user.username} has been created successfully.`);
+        }
+      }
+
+      // Reset form
+      setFormUsername("");
+      setFormPassword("");
+      setFormRole(ROLES[0]);
+    } catch (err: any) {
+      setError(err.message);
+      if (voiceAssistant && voiceEnabled) {
+        await voiceAssistant.speak("Failed to create user. " + err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [formUsername, formPassword, formRole, enrollFaceAfter, voiceAssistant, voiceEnabled]);
 
   // Initialize voice assistant
   useEffect(() => {
@@ -81,8 +133,10 @@ export default function EnrollPage() {
 
     voiceAssistant.setEnabled(voiceEnabled);
     
-    if (voiceEnabled) {
-      voiceAssistant.speak("Welcome to face enrollment. Please select a user to enroll.");
+    if (voiceEnabled && step === "registration-form") {
+      voiceAssistant.speak("Welcome to registration. Fill in the user details and say 'create user' to register.");
+      setVoiceListening(true);
+      voiceAssistant.startListening();
     }
 
     voiceAssistant.onCommand((action) => {
@@ -90,6 +144,13 @@ export default function EnrollPage() {
         case "CAPTURE":
           if (step === "positioning" && status === "face-detected") {
             handleCapture();
+          }
+          break;
+        case "CREATE_USER":
+          if (step === "registration-form" && formUsername && formPassword) {
+            submitRegistration();
+          } else if (step === "registration-form") {
+            voiceAssistant.speak("Please fill in the username and password fields first.");
           }
           break;
         case "CANCEL":
@@ -108,7 +169,7 @@ export default function EnrollPage() {
     return () => {
       voiceAssistant.stopListening();
     };
-  }, [voiceEnabled, voiceAssistant, step, status]);
+  }, [voiceEnabled, voiceAssistant, step, status, formUsername, formPassword, submitRegistration]);
 
   // Camera status voice feedback
   useEffect(() => {
@@ -184,14 +245,9 @@ export default function EnrollPage() {
     };
   }, [step, selectedUser, loadModels, startCamera, startDetection, voiceAssistant, voiceEnabled]);
 
-  const handleSelectUser = async (user: User) => {
-    setSelectedUser(user);
-    setStep("camera-setup");
-    setError(null);
-
-    if (voiceAssistant && voiceEnabled) {
-      await voiceAssistant.speak(`Selected ${user.username}. ${VOICE_MESSAGES.enrollStart}`);
-    }
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitRegistration();
   };
 
   const handleCapture = useCallback(async () => {
@@ -238,7 +294,7 @@ export default function EnrollPage() {
         throw new Error(data.error || "Failed to save face data");
       }
 
-      setStep("success");
+      setStep("face-success");
       stopCamera();
 
       if (voiceAssistant && voiceEnabled) {
@@ -256,11 +312,16 @@ export default function EnrollPage() {
   const handleReset = () => {
     stopCamera();
     stopDetection();
-    setStep("select-user");
+    setStep("registration-form");
     setSelectedUser(null);
     setError(null);
     setCaptureProgress(0);
     setVoiceListening(false);
+    setNewlyCreatedUser(null);
+    setFormUsername("");
+    setFormPassword("");
+    setFormRole(ROLES[0]);
+    setEnrollFaceAfter(true);
     if (voiceAssistant) {
       voiceAssistant.stopListening();
     }
@@ -307,11 +368,13 @@ export default function EnrollPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
-              <FaceIdIcon className="w-10 h-10 text-emerald-400" />
-              <GradientText>Face Enrollment</GradientText>
+              <svg className="w-10 h-10 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              <GradientText>Registration</GradientText>
             </h1>
             <p className="text-slate-400 mt-1">
-              Medi Runner Control Console • Biometric Registration
+              Medi Runner Control Console • User Registration
             </p>
           </div>
           <FuturisticButton variant="ghost" onClick={() => router.push("/login")}>
@@ -322,54 +385,156 @@ export default function EnrollPage() {
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto">
-        {/* Step: Select User */}
-        {step === "select-user" && (
+        {/* Step: Registration Form */}
+        {step === "registration-form" && (
           <GlowBorder active={true} color="emerald" className="animate-fade-in">
             <div className="p-8">
-              <h2 className="text-xl font-semibold mb-2">Select User to Enroll</h2>
+              <h2 className="text-xl font-semibold mb-2">Create New User</h2>
               <p className="text-slate-400 mb-6">
-                Choose a user account to register face biometrics. 
-                {voiceEnabled && " Or say a user's name to select them."}
+                Fill in the details below to register a new user account.
               </p>
 
-              {users.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
-                  <FuturisticLoader />
+              <form onSubmit={handleRegister} className="space-y-6">
+                {/* Username */}
+                <div>
+                  <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-2">
+                    Username
+                  </label>
+                  <input
+                    id="username"
+                    type="text"
+                    value={formUsername}
+                    onChange={(e) => setFormUsername(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors text-white placeholder-slate-500"
+                    placeholder="Enter username"
+                  />
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {users.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => handleSelectUser(user)}
-                      className="group relative p-5 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-emerald-500/50 transition-all duration-300 text-left hover:shadow-lg hover:shadow-emerald-500/10"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-lg font-bold text-white">
-                          {user.username[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-lg group-hover:text-emerald-400 transition-colors">
-                            {user.username}
-                          </h3>
-                          <p className="text-sm text-slate-400">{user.role}</p>
-                        </div>
-                        {user.faceEnrolled ? (
-                          <StatusBadge status="success" text="Enrolled" />
-                        ) : (
-                          <StatusBadge status="info" text="Not Enrolled" />
-                        )}
-                      </div>
-                      {/* Hover arrow */}
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+
+                {/* Password */}
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors text-white placeholder-slate-500"
+                    placeholder="Enter password"
+                  />
+                </div>
+
+                {/* Role */}
+                <div>
+                  <label htmlFor="role" className="block text-sm font-medium text-slate-300 mb-2">
+                    Role
+                  </label>
+                  <select
+                    id="role"
+                    value={formRole}
+                    onChange={(e) => setFormRole(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors text-white"
+                  >
+                    {ROLES.map((role) => (
+                      <option key={role} value={role} className="bg-slate-800">
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Enroll Face Option */}
+                <div className="flex items-center gap-3">
+                  <input
+                    id="enrollFace"
+                    type="checkbox"
+                    checked={enrollFaceAfter}
+                    onChange={(e) => setEnrollFaceAfter(e.target.checked)}
+                    className="w-5 h-5 rounded bg-slate-800 border-slate-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                  />
+                  <label htmlFor="enrollFace" className="text-sm text-slate-300">
+                    Enroll face biometrics after registration
+                  </label>
+                </div>
+
+                {/* Voice command hint */}
+                {voiceEnabled && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <span>Say <strong>"Create user"</strong> to register when fields are filled</span>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="p-4 rounded-xl bg-red-500/20 border border-red-500/50 text-red-300">
+                    {error}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-4">
+                  <FuturisticButton type="button" variant="secondary" onClick={() => router.push("/login")}>
+                    Cancel
+                  </FuturisticButton>
+                  <FuturisticButton type="submit" disabled={loading} className="flex-1">
+                    {loading ? (
+                      <span className="animate-pulse">Creating...</span>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                         </svg>
-                      </div>
-                    </button>
-                  ))}
+                        Create User
+                      </>
+                    )}
+                  </FuturisticButton>
                 </div>
-              )}
+              </form>
+            </div>
+          </GlowBorder>
+        )}
+
+        {/* Step: Registration Success (no face enrollment) */}
+        {step === "registration-success" && (
+          <GlowBorder active={true} color="emerald" className="animate-fade-in">
+            <div className="p-12 text-center">
+              <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center animate-float">
+                <svg className="w-12 h-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-3xl font-bold mb-2">
+                <GradientText>User Created!</GradientText>
+              </h2>
+              <p className="text-slate-400 mb-8 max-w-md mx-auto">
+                {newlyCreatedUser?.username} has been registered successfully as {newlyCreatedUser?.role}.
+                They can now log in using their password.
+              </p>
+              <div className="flex gap-4 justify-center">
+                <FuturisticButton 
+                  variant="secondary" 
+                  onClick={() => {
+                    if (newlyCreatedUser) {
+                      setSelectedUser(newlyCreatedUser);
+                      setStep("camera-setup");
+                    }
+                  }}
+                >
+                  <FaceIdIcon className="w-5 h-5 inline mr-2" />
+                  Add Face Now
+                </FuturisticButton>
+                <FuturisticButton variant="secondary" onClick={handleReset}>
+                  Add Another User
+                </FuturisticButton>
+                <FuturisticButton onClick={() => router.push("/login")}>
+                  Go to Login
+                </FuturisticButton>
+              </div>
             </div>
           </GlowBorder>
         )}
@@ -524,8 +689,8 @@ export default function EnrollPage() {
           </div>
         )}
 
-        {/* Step: Success */}
-        {step === "success" && (
+        {/* Step: Face Enrollment Success */}
+        {step === "face-success" && (
           <GlowBorder active={true} color="emerald" className="animate-fade-in">
             <div className="p-12 text-center">
               <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center animate-float">
@@ -534,7 +699,7 @@ export default function EnrollPage() {
                 </svg>
               </div>
               <h2 className="text-3xl font-bold mb-2">
-                <GradientText>Enrollment Successful!</GradientText>
+                <GradientText>Registration Complete!</GradientText>
               </h2>
               <p className="text-slate-400 mb-8 max-w-md mx-auto">
                 {selectedUser?.username}'s face has been successfully enrolled. 
@@ -542,7 +707,7 @@ export default function EnrollPage() {
               </p>
               <div className="flex gap-4 justify-center">
                 <FuturisticButton variant="secondary" onClick={handleReset}>
-                  Enroll Another
+                  Register Another User
                 </FuturisticButton>
                 <FuturisticButton onClick={() => router.push("/login")}>
                   Go to Login
