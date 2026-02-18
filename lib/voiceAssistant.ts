@@ -90,10 +90,33 @@ class VoiceAssistant {
     // Wait for voices to load
     const setVoice = () => {
       const voices = this.synthesis!.getVoices();
-      // Prefer a natural-sounding English voice
+      // Prefer a female English voice (common female voice names)
+      const femaleKeywords = ['female', 'woman', 'zira', 'samantha', 'victoria', 'karen', 'moira', 'tessa', 'fiona', 'veena', 'susan', 'linda', 'catherine', 'hazel', 'heather', 'aria', 'jenny', 'sara', 'emily'];
+      
+      // Try to find a female neural/natural voice first
       this.selectedVoice = voices.find(v => 
-        v.lang.startsWith('en') && (v.name.includes('Neural') || v.name.includes('Natural'))
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+        v.lang.startsWith('en') && 
+        (v.name.includes('Neural') || v.name.includes('Natural')) &&
+        femaleKeywords.some(keyword => v.name.toLowerCase().includes(keyword))
+      ) || 
+      // Then try any female English voice
+      voices.find(v => 
+        v.lang.startsWith('en') && 
+        femaleKeywords.some(keyword => v.name.toLowerCase().includes(keyword))
+      ) ||
+      // Microsoft Zira is a common Windows female voice
+      voices.find(v => v.name.includes('Zira')) ||
+      // Samantha is macOS default female voice
+      voices.find(v => v.name.includes('Samantha')) ||
+      // Google UK English Female
+      voices.find(v => v.name.includes('Google UK English Female')) ||
+      // Fallback to any English voice
+      voices.find(v => v.lang.startsWith('en')) || 
+      voices[0];
+      
+      if (this.selectedVoice) {
+        console.log('Voice assistant using:', this.selectedVoice.name);
+      }
     };
     
     if (this.synthesis.getVoices().length > 0) {
